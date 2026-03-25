@@ -9,6 +9,11 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      # El campo 'from' debe coincidir exactamente con la cuenta autenticada (username).
+      # Cada proveedor SMTP impone esta restricción: Hostinger usa el email del buzón,
+      # Gmail la cuenta de Google, Outlook la cuenta Microsoft, etc.
+      MAIL_FROM: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>"
 
     steps:
       - name: Checkout del código
@@ -26,47 +31,56 @@ jobs:
       - name: Ejecutar Linter
         run: npm run lint
 
+      - name: Obtener short SHA y firma del commit
+        run: |
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          SIGNOFF=$(git log -1 --format='%B' | grep -i '^Signed-off-by:' || echo '')
+          echo "COMMIT_SIGNOFF=$SIGNOFF" >> $GITHUB_ENV
+
       # --- NOTIFICACIÓN SI TODO SALE BIEN ---
       - name: Enviar correo de éxito
-        if: success() && github.event_name == 'pull_request'
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: dawidd6/action-send-mail@v3
         with:
-          # Debo cambiar el servidor SMTP cuando use otro proveedor de correo (gmail, outlook, etc.)
-          server_address: smtp.hostinger.com
-          server_port: 465
+          server_address: ${{ vars.MAIL_SERVER }}
+          server_port: ${{ vars.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "✅ PR Lista: ${{ github.event.pull_request.title }}"
-          to: didacusdev@gmail.com
-          # Importante: Hostinger exige que el 'from' coincida con la cuenta, gmail
-          from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>" 
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ env.MAIL_FROM }}
           body: |
             ¡Enhorabuena! 🎉
             
-            La PR "${{ github.event.pull_request.title }} - ${{ github.event.pull_request.number }}" ha pasado el linter sin errores.
+            La PR "${{ env.SHORT_SHA }}: ${{ github.event.pull_request.title }} | #${{ github.event.pull_request.number }}" 
+            abierta por ${{ github.event.pull_request.user.login }}, con ultimo push realizado por ${{ github.actor }},
+            ha pasado el linter sin errores.
             
             Es necesaria tu intervención para realizar el merge, ingresa al siguiente enlace para revisar y aprobar la PR:
             ${{ github.event.pull_request.html_url }}
+            ${{ env.COMMIT_SIGNOFF }}
 
       # --- NOTIFICACIÓN SI ALGO FALLA ---
       - name: Enviar correo de error
-        if: failure() && github.event_name == 'pull_request'
+        if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: dawidd6/action-send-mail@v3
         with:
-          # Debo cambiar el servidor SMTP cuando use otro proveedor de correo (gmail, outlook, etc.)
-          server_address: smtp.hostinger.com
-          server_port: 465
+          server_address: ${{ vars.MAIL_SERVER }}
+          server_port: ${{ vars.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "❌ Error de Calidad: ${{ github.event.pull_request.title }}"
-          to: didacusdev@gmail.com
-          # Importante: Hostinger exige que el 'from' coincida con la cuenta, gmail
-          from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>" 
+          to: ${{ secrets.MAIL_TO }}
+          from: ${{ env.MAIL_FROM }}
           body: |
             ¡Atención! ⚠️
             
-            El linter ha encontrado errores en la PR: "${{ github.event.pull_request.title }}".
+            El linter ha encontrado errores en la PR: "${{ github.event.pull_request.title }} | #${{ github.event.pull_request.number }}".
             El código no cumple con las reglas de estilo configuradas (posiblemente un console.log, comillas dobles en lugar de simples o falta de punto y coma).
+            
+            PR abierta por: ${{ github.event.pull_request.user.login }}
+            Último push realizado por: ${{ github.actor }}
             
             Revisa los detalles aquí:
             ${{ github.event.pull_request.html_url }}/checks
+            ${{ env.COMMIT_SIGNOFF }}
