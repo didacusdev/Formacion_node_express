@@ -33,7 +33,7 @@ jobs:
         # Ejecutamos el linter. El "|| echo" evita que el job se detenga aquí,
         # permitiendo que los pasos de envío de correo capturen el reporte.
         run: |
-          npm run lint -- --color=false > eslint_report.txt 2>&1 || echo "LINT_FAILED=true" >> $GITHUB_ENV
+          npm run lint --silent --color=false > eslint_report.txt 2>&1 || echo "LINT_FAILED=true" >> $GITHUB_ENV
 
       - name: Extraer metadatos y reporte
         if: always()
