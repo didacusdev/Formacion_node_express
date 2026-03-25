@@ -45,7 +45,7 @@ jobs:
             
             La PR "${{ github.event.pull_request.title }} - ${{ github.event.pull_request.number }}" ha pasado el linter sin errores.
             
-            Es necesario tu intervención para realizar el merge, ingresa al siguiente enlace para revisar y aprobar la PR:
+            Es necesaria tu intervención para realizar el merge, ingresa al siguiente enlace para revisar y aprobar la PR:
             ${{ github.event.pull_request.html_url }}
 
       # --- NOTIFICACIÓN SI ALGO FALLA ---
