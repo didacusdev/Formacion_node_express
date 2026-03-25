@@ -8,16 +8,16 @@ on:
 
 jobs:
   lint:
+    name: "Linter & Email Notification"
     runs-on: ubuntu-latest
     env:
-      # El campo 'from' debe coincidir exactamente con la cuenta autenticada (username).
-      # Cada proveedor SMTP impone esta restricción: Hostinger usa el email del buzón,
-      # Gmail la cuenta de Google, Outlook la cuenta Microsoft, etc.
       MAIL_FROM: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>"
 
     steps:
       - name: Checkout del código
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Permite leer el historial para el Signed-off-by
 
       - name: Configurar Node.js
         uses: actions/setup-node@v4
@@ -31,13 +31,23 @@ jobs:
       - name: Ejecutar Linter
         run: npm run lint
 
-      - name: Obtener short SHA y firma del commit
+      - name: Extraer metadatos del commit
+        if: always()
         run: |
-          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-          SIGNOFF=$(git log -1 --format='%B' | grep -i '^Signed-off-by:' || echo '')
-          echo "COMMIT_SIGNOFF=$SIGNOFF" >> $GITHUB_ENV
+          # Obtenemos el SHA real del commit del usuario
+          REAL_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "SHORT_SHA=${REAL_SHA::7}" >> $GITHUB_ENV
+          
+          # Extraemos el Signed-off-by. 
+          # Si existe, pre-formateamos el HTML. Si no, queda vacío.
+          SIGNOFF_RAW=$(git log -1 $REAL_SHA --format='%B' | grep -i '^Signed-off-by:' || echo '')
+          if [ -n "$SIGNOFF_RAW" ]; then
+            echo "COMMIT_SIGNOFF=<div style='margin-top:10px; padding-top:10px; border-top:1px dashed #d1d5da;'><strong>DCO:</strong> <span style='font-family:monospace;'>$SIGNOFF_RAW</span></div>" >> $GITHUB_ENV
+          else
+            echo "COMMIT_SIGNOFF=" >> $GITHUB_ENV
+          fi
 
-      # --- NOTIFICACIÓN SI TODO SALE BIEN ---
+      # --- NOTIFICACIÓN: ÉXITO ---
       - name: Enviar correo de éxito
         if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: dawidd6/action-send-mail@v3
@@ -46,21 +56,35 @@ jobs:
           server_port: ${{ vars.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "✅ PR Lista: ${{ github.event.pull_request.title }}"
+          subject: "✅ PR Validada: [${{ env.SHORT_SHA }}] ${{ github.event.pull_request.title }}"
           to: ${{ secrets.MAIL_TO }}
           from: ${{ env.MAIL_FROM }}
+          content_type: text/html
           body: |
-            ¡Enhorabuena! 🎉
-            
-            La PR "${{ env.SHORT_SHA }}: ${{ github.event.pull_request.title }} | #${{ github.event.pull_request.number }}" 
-            abierta por ${{ github.event.pull_request.user.login }}, con ultimo push realizado por ${{ github.actor }},
-            ha pasado el linter sin errores.
-            
-            Es necesaria tu intervención para realizar el merge, ingresa al siguiente enlace para revisar y aprobar la PR:
-            ${{ github.event.pull_request.html_url }}
-            ${{ env.COMMIT_SIGNOFF }}
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
+              <div style="background-color: #2ea44f; color: white; padding: 24px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">¡Validación Exitosa! 🎉</h1>
+              </div>
+              <div style="padding: 24px; color: #24292e; line-height: 1.6;">
+                <p style="margin-top: 0;">La Pull Request <strong>#${{ github.event.pull_request.number }}</strong> ha superado el control de calidad automáticamente.</p>
+                <div style="background: #f6f8fa; padding: 16px; border-radius: 6px; border: 1px solid #d1d5da;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <tr><td style="padding: 4px 0; color: #586069;">Commit:</td><td><code>${{ env.SHORT_SHA }}</code></td></tr>
+                    <tr><td style="padding: 4px 0; color: #586069;">Título:</td><td>${{ github.event.pull_request.title }}</td></tr>
+                    <tr><td style="padding: 4px 0; color: #586069;">Autor:</td><td>${{ github.event.pull_request.user.login }}</td></tr>
+                  </table>
+                </div>
+                <p style="margin-top: 24px; text-align: center;">
+                  <a href="${{ github.event.pull_request.html_url }}" style="display: inline-block; background: #0366d6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">Revisar y Merge</a>
+                </p>
+              </div>
+              <div style="background: #f1f8ff; padding: 16px 24px; font-size: 12px; color: #586069; border-top: 1px solid #e1e4e8;">
+                <strong>Estado:</strong> Verificado por GitHub Actions.
+                ${{ env.COMMIT_SIGNOFF }}
+              </div>
+            </div>
 
-      # --- NOTIFICACIÓN SI ALGO FALLA ---
+      # --- NOTIFICACIÓN: ERROR ---
       - name: Enviar correo de error
         if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: dawidd6/action-send-mail@v3
@@ -69,18 +93,29 @@ jobs:
           server_port: ${{ vars.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "❌ Error de Calidad: ${{ github.event.pull_request.title }}"
+          subject: "❌ Error de Calidad: [${{ env.SHORT_SHA }}] ${{ github.event.pull_request.title }}"
           to: ${{ secrets.MAIL_TO }}
           from: ${{ env.MAIL_FROM }}
+          content_type: text/html
           body: |
-            ¡Atención! ⚠️
-            
-            El linter ha encontrado errores en la PR: "${{ github.event.pull_request.title }} | #${{ github.event.pull_request.number }}".
-            El código no cumple con las reglas de estilo configuradas (posiblemente un console.log, comillas dobles en lugar de simples o falta de punto y coma).
-            
-            PR abierta por: ${{ github.event.pull_request.user.login }}
-            Último push realizado por: ${{ github.actor }}
-            
-            Revisa los detalles aquí:
-            ${{ github.event.pull_request.html_url }}/checks
-            ${{ env.COMMIT_SIGNOFF }}
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
+              <div style="background-color: #cf222e; color: white; padding: 24px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">Error de Calidad ⚠️</h1>
+              </div>
+              <div style="padding: 24px; color: #24292e; line-height: 1.6;">
+                <p style="margin-top: 0;">Se han detectado problemas en la PR <strong>#${{ github.event.pull_request.number }}</strong> que impiden el merge.</p>
+                <p><strong>Posibles causas:</strong></p>
+                <ul style="padding-left: 20px;">
+                  <li>Presencia de <code>console.log()</code>.</li>
+                  <li>Falta de puntos y coma (semicolon).</li>
+                  <li>Uso de comillas dobles en lugar de simples.</li>
+                </ul>
+                <p style="text-align: center; margin-top: 24px;">
+                  <a href="${{ github.event.pull_request.html_url }}/checks" style="display: inline-block; background: #cf222e; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">Ver errores detallados</a>
+                </p>
+              </div>
+              <div style="background: #fff8f8; padding: 16px 24px; font-size: 12px; color: #586069; border-top: 1px solid #e1e4e8;">
+                <strong>Commit ID:</strong> <code>${{ env.SHORT_SHA }}</code>
+                ${{ env.COMMIT_SIGNOFF }}
+              </div>
+            </div>
