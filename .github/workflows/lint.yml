@@ -1,0 +1,29 @@
+name: Code Quality Check
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Versión estable para ESLint 10
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        # 'npm ci' es mejor que 'install' en CI porque usa el package-lock.json exacto
+        run: npm ci
+
+      - name: Ejecutar Linter
+        # Este comando fallará si hay un solo 'error' en las reglas
+        run: npm run lint
