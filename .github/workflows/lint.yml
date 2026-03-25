@@ -17,13 +17,56 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # Versión estable para ESLint 10
+          node-version: '20'
           cache: 'npm'
 
       - name: Instalar dependencias
-        # 'npm ci' es mejor que 'install' en CI porque usa el package-lock.json exacto
         run: npm ci
 
       - name: Ejecutar Linter
-        # Este comando fallará si hay un solo 'error' en las reglas
         run: npm run lint
+
+      # --- NOTIFICACIÓN SI TODO SALE BIEN ---
+      - name: Enviar correo de éxito
+        if: success() && github.event_name == 'pull_request'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          # Debo cambiar el servidor SMTP cuando use otro proveedor de correo (gmail, outlook, etc.)
+          server_address: smtp.hostinger.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "✅ PR Lista: ${{ github.event.pull_request.title }}"
+          to: didacusdev@gmail.com
+          # Importante: Hostinger exige que el 'from' coincida con la cuenta, gmail
+          from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>" 
+          body: |
+            ¡Enhorabuena! 🎉
+            
+            La PR "${{ github.event.pull_request.title }}" ha pasado el linter sin errores.
+            
+            Es necesario tu intervención para realizar el merge, ingresa al siguiente enlace para revisar y aprobar la PR:
+            ${{ github.event.pull_request.html_url }}
+
+      # --- NOTIFICACIÓN SI ALGO FALLA ---
+      - name: Enviar correo de error
+        if: failure() && github.event_name == 'pull_request'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          # Debo cambiar el servidor SMTP cuando use otro proveedor de correo (gmail, outlook, etc.)
+          server_address: smtp.hostinger.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "❌ Error de Calidad: ${{ github.event.pull_request.title }}"
+          to: didacusdev@gmail.com
+          # Importante: Hostinger exige que el 'from' coincida con la cuenta, gmail
+          from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>" 
+          body: |
+            ¡Atencion! ⚠️
+            
+            El linter ha encontrado errores en la PR: "${{ github.event.pull_request.title }}".
+            El código no cumple con las reglas de estilo configuradas (posiblemente un console.log, comillas dobles en lugar de simples o falta de punto y coma).
+            
+            Revisa los detalles aquí:
+            ${{ github.event.pull_request.html_url }}/checks

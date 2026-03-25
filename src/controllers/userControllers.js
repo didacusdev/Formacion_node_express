@@ -91,7 +91,7 @@ const postUser = async (req, res) => {
       const messages = Object.values(_error.errors).map((err) => err.message);
       return res.status(400).json({ error: 'Validation failed', details: messages });
     }
-    console.error('Error creating user:', _error);
+    // console.error('Error creating user:', _error);
     res.status(500).json({ error: 'An error occurred while creating the user' });
   }
 };
