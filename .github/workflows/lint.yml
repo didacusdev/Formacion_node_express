@@ -30,27 +30,26 @@ jobs:
 
       - name: Ejecutar Linter y Capturar Errores
         id: run_lint
-        # Ejecutamos el linter, quitamos colores y guardamos en un archivo.
-        # El "|| true" es para que el paso no rompa la ejecución y podamos procesar el log.
+        # Ejecutamos el linter. El "|| echo" evita que el job se detenga aquí,
+        # permitiendo que los pasos de envío de correo capturen el reporte.
         run: |
           npm run lint -- --color=false > eslint_report.txt 2>&1 || echo "LINT_FAILED=true" >> $GITHUB_ENV
 
       - name: Extraer metadatos y reporte
         if: always()
         run: |
-          # SHA y Firma (Lo que ya tenías)
+          # 1. SHA real del commit
           REAL_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
           echo "SHORT_SHA=${REAL_SHA::7}" >> $GITHUB_ENV
           
+          # 2. Firma DCO condicional
           SIGNOFF_RAW=$(git log -1 $REAL_SHA --format='%B' | grep -i '^Signed-off-by:' || echo '')
           if [ -n "$SIGNOFF_RAW" ]; then
             echo "COMMIT_SIGNOFF=<div style='margin-top:10px; padding-top:10px; border-top:1px dashed #d1d5da;'><strong>DCO:</strong> <span style='font-family:monospace;'>$SIGNOFF_RAW</span></div>" >> $GITHUB_ENV
           fi
 
-          # PROCESAR ERRORES DEL LINTER
+          # 3. Procesar reporte de errores si falló
           if [ "${{ env.LINT_FAILED }}" == "true" ]; then
-            # Tomamos las primeras 30 líneas del error para no saturar el correo
-            # Limpiamos caracteres extraños y preparamos el bloque HTML
             ERRORS=$(cat eslint_report.txt | head -n 30)
             echo "LINT_ERRORS_HTML<<EOF" >> $GITHUB_ENV
             echo "<div style='background:#1e1e1e; color:#ff6b6b; padding:15px; border-radius:5px; font-family:monospace; font-size:12px; white-space:pre-wrap; overflow-x:auto;'>$ERRORS</div>" >> $GITHUB_ENV
@@ -59,14 +58,14 @@ jobs:
 
       # --- NOTIFICACIÓN: ÉXITO ---
       - name: Enviar correo de éxito
-        if: success() && env.LINT_FAILED != 'true' && github.event_name == 'pull_request'
+        if: always() && env.LINT_FAILED != 'true' && github.event_name == 'pull_request'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ vars.MAIL_SERVER }}
           server_port: ${{ vars.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "✅ PR Validada: [${{ env.SHORT_SHA }}] ${{ github.event.pull_request.title }}"
+          subject: "PR Validada ✅: [${{ env.SHORT_SHA }}] ${{ github.event.pull_request.title }}"
           to: ${{ secrets.MAIL_TO }}
           from: ${{ env.MAIL_FROM }}
           html_body: |
@@ -91,14 +90,14 @@ jobs:
 
       # --- NOTIFICACIÓN: ERROR ---
       - name: Enviar correo de error
-        if: (failure() || env.LINT_FAILED == 'true') && github.event_name == 'pull_request'
+        if: always() && env.LINT_FAILED == 'true' && github.event_name == 'pull_request'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ vars.MAIL_SERVER }}
           server_port: ${{ vars.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "❌ Fallo de Linter: [${{ env.SHORT_SHA }}] ${{ github.event.pull_request.title }}"
+          subject: "Fallo de Linter ❌: [${{ env.SHORT_SHA }}] ${{ github.event.pull_request.title }}"
           to: ${{ secrets.MAIL_TO }}
           from: ${{ env.MAIL_FROM }}
           html_body: |
@@ -120,3 +119,15 @@ jobs:
                 ${{ env.COMMIT_SIGNOFF }}
               </div>
             </div>
+
+      # --- PASO FINAL: BLOQUEO DE SEGURIDAD ---
+      - name: Verificar Integridad Final
+        if: always()
+        run: |
+          if [ "${{ env.LINT_FAILED }}" == "true" ]; then
+            echo "ERROR: El linter falló. Bloqueando el Merge."
+            exit 1
+          else
+            echo "SUCCESS: Código limpio."
+            exit 0
+          fi
