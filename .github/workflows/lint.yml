@@ -63,7 +63,7 @@ jobs:
           # Importante: Hostinger exige que el 'from' coincida con la cuenta, gmail
           from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>" 
           body: |
-            ¡Atencion! ⚠️
+            ¡Atención! ⚠️
             
             El linter ha encontrado errores en la PR: "${{ github.event.pull_request.title }}".
             El código no cumple con las reglas de estilo configuradas (posiblemente un console.log, comillas dobles en lugar de simples o falta de punto y coma).
