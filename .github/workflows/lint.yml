@@ -120,6 +120,18 @@ jobs:
               </div>
             </div>
 
+      - name: Registrar éxito del Linter
+        if: success() && env.LINT_FAILED != 'true'
+        run: echo "SUCCESS" > linter_status.txt
+
+      - name: Subir artefacto de estado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linter-status-${{ github.event.pull_request.head.sha || github.sha }}
+          path: linter_status.txt
+          retention-days: 1 # Solo lo mantenemos por 1 día para evitar acumulación
+
       # --- PASO FINAL: BLOQUEO DE SEGURIDAD ---
       - name: Verificar Integridad Final
         if: always()
