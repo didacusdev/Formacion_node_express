@@ -12,7 +12,8 @@ jobs:
     
     permissions:
       contents: write
-      actions: read # Necesario para descargar artefactos
+      checks: read
+      pull-requests: read
 
     steps:
       - name: Checkout repository
@@ -21,24 +22,18 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # NUEVO PASO: Descargar el artefacto que dejó el lint.yml
-      - name: Descargar estado del Linter
-        uses: actions/download-artifact@v4
-        continue-on-error: true # No queremos que rompa inmediatamente si no existe
-        with:
-          name: linter-status-${{ github.event.pull_request.head.sha }}
-          
-      - name: Verificar Linter
+      # --- NUEVA VERIFICACIÓN NATIVA ---
+      - name: Verificar que el Linter (y checks requeridos) pasaron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f linter_status.txt ]; then
-            STATUS=$(cat linter_status.txt)
-            if [ "$STATUS" == "SUCCESS" ]; then
-              echo "✅ Artefacto de Linter encontrado y exitoso."
-              exit 0
-            fi
-          fi
-          echo "❌ No se encontró un artefacto de Linter exitoso para este commit. Abortando."
-          exit 1
+          echo "Consultando el estado de los checks requeridos para la PR #${{ github.event.pull_request.number }}..."
+          
+          # gh pr checks verifica los estados. El flag --required asegura que solo mire los importantes (tu Linter).
+          # Si el linter falló, este comando lanza un "exit code 1" y detiene la action automáticamente.
+          gh pr checks ${{ github.event.pull_request.number }} --required
+          
+          echo "✅ Todos los checks requeridos están en verde. Procediendo con la versión..."
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -48,7 +43,6 @@ jobs:
       - name: Get PR info and files changed
         id: pr_info
         run: |
-          # Obtenemos los archivos que cambiaron entre la base y el merge
           FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.merge_commit_sha }})
           echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
           echo "$FILES" >> $GITHUB_ENV
@@ -58,7 +52,6 @@ jobs:
         id: version_bump
         run: |
           bump=patch
-          # Lógica por carpetas
           if echo "$CHANGED_FILES" | grep -E 'src/routes/'; then
             bump=major
           elif echo "$CHANGED_FILES" | grep -E 'src/controllers/|src/middlewares/|src/utils/|src/database/|src/app.js|src/server.js'; then
@@ -68,7 +61,6 @@ jobs:
 
       - name: Bump version in package.json
         run: |
-          # Guardamos la versión actual antes del cambio
           echo "PREV_VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
           npm version ${{ steps.version_bump.outputs.bump }} --no-git-tag-version
           echo "NEW_VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
@@ -77,9 +69,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
+          git add package.json package-lock.json || true
           git commit -m "ci: bump version to v${{ env.NEW_VERSION }} [skip ci]" || echo "No changes to commit"
-          # Empujamos directamente a la rama base (main o dev)
           git push origin HEAD:${{ github.event.pull_request.base.ref }}
 
       - name: Enviar correo de nueva versión
@@ -94,19 +85,21 @@ jobs:
           to: ${{ secrets.MAIL_TO }}
           from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>"
           html_body: |
-            <div style="font-family: sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
               <div style="background-color: #2ea44f; color: white; padding: 24px; text-align: center;">
                 <h1 style="margin: 0; font-size: 20px;">¡Nueva versión generada! 🚀</h1>
               </div>
               <div style="padding: 24px; color: #24292e; line-height: 1.6;">
-                <p>Se ha detectado un cambio <strong>${{ steps.version_bump.outputs.bump }}</strong> y se ha actualizado la API.</p>
-                <div style="background: #f6f8fa; padding: 16px; border-radius: 6px; border: 1px solid #d1d5da;">
-                  <strong>v${{ env.PREV_VERSION }}</strong> → <strong style="color: #2ea44f;">v${{ env.NEW_VERSION }}</strong><br>
-                  <strong>PR:</strong> #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}<br>
-                  <strong>Autor:</strong> ${{ github.event.pull_request.user.login }}
+                <p style="margin-top: 0;">Se ha publicado una nueva versión de la API tras el merge de la PR <strong>#${{ github.event.pull_request.number }}</strong>.</p>
+                <div style="background: #f6f8fa; padding: 16px; border-radius: 6px; border: 1px solid #d1d5da; margin-bottom: 16px;">
+                  <strong>Versión anterior:</strong> <code>v${{ env.PREV_VERSION }}</code><br>
+                  <strong>Nueva versión:</strong> <code style="color: #2ea44f; font-weight: bold;">v${{ env.NEW_VERSION }}</code><br>
+                  <strong>Tipo de incremento:</strong> <code>${{ steps.version_bump.outputs.bump }}</code><br>
+                  <strong>Autor:</strong> ${{ github.event.pull_request.user.login }}<br>
+                  <strong>Título PR:</strong> ${{ github.event.pull_request.title }}
                 </div>
-                <p style="text-align: center; margin-top: 24px;">
-                  <a href="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}" style="display: inline-block; background: #0366d6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Ver cambios en versión</a>
+                <p style="margin-top: 24px; text-align: center;">
+                  <a href="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}" style="display: inline-block; background: #0366d6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">Ver commit de versión</a>
                 </p>
               </div>
             </div>
