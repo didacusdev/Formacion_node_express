@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "lint": "eslint src/",
+    "lint": "eslint src/ && node -e \"const c='\\x1b[36m',r='\\x1b[0m',t=' 0 errores encontrados ',b='='.repeat(t.length+2);console.log(c+b+'\\n|'+t+'|\\n'+b+'\\n'+r);\"",
     "lint:fix": "eslint src/ --fix && node -e \"const c='\\x1b[36m',r='\\x1b[0m',t=' 0 errores encontrados ',b='='.repeat(t.length+2);console.log(c+b+'\\n|'+t+'|\\n'+b+'\\n'+r);\""
   },
   "keywords": [],
