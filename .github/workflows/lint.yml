@@ -71,7 +71,7 @@ jobs:
           html_body: |
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
               <div style="background-color: #2ea44f; color: white; padding: 24px; text-align: center;">
-                <h1 style="margin: 0; font-size: 20px;">¡Validación Exitosa! 🎉</h1>
+                <h1 style="margin: 0; font-size: 20px;">¡Validación Exitosa!</h1>
               </div>
               <div style="padding: 24px; color: #24292e; line-height: 1.6;">
                 <p style="margin-top: 0;">La PR <strong>#${{ github.event.pull_request.number }}</strong> ha superado el linter sin observaciones.</p>
@@ -103,7 +103,7 @@ jobs:
           html_body: |
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
               <div style="background-color: #cf222e; color: white; padding: 24px; text-align: center;">
-                <h1 style="margin: 0; font-size: 20px;">Reporte de Errores ⚠️</h1>
+                <h1 style="margin: 0; font-size: 20px;">Reporte de Errores</h1>
               </div>
               <div style="padding: 24px; color: #24292e; line-height: 1.6;">
                 <p style="margin-top: 0;">Se han encontrado los siguientes errores en la PR <strong>#${{ github.event.pull_request.number }}</strong>:</p>
