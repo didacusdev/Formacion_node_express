@@ -16,6 +16,6 @@ import {
 const router = Router(); // Creamios una nueva instancia de Router
 
 router.get('/users', validateAdminToken, getUsers); // Configuramos la ruta para manejar las solicitudes GET a /users y llamamos al controlador getUsers
-router.post('/users', generateToken(), postUser); // Configuramos la ruta para manejar las solicitudes POST a /users y llamamos al controlador postUser
+router.post('/users/register', generateToken(), postUser); // Configuramos la ruta para manejar las solicitudes POST a /users y llamamos al controlador postUser
 
 export default router; // Exportamos el enrutador para poder usarlo en otros archivos (como app.js)
