@@ -7,37 +7,38 @@ on:
 
 jobs:
   bump-version:
-    # Solo corre si fue mergeado Y no fue una acción de "skip ci" (evita bucles)
     if: github.event.pull_request.merged == true && !contains(github.event.pull_request.title, '[skip ci]')
     runs-on: ubuntu-latest
     
-    # Permisos para escribir en el repo y leer los checks
     permissions:
       contents: write
-      checks: read
-      pull-requests: read
+      actions: read # Necesario para descargar artefactos
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Usar un token con permisos de escritura (el GITHUB_TOKEN suele bastar)
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verificar que el Linter haya pasado
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Usamos la CLI de GitHub para ver el estado del check específico
-          # Si no es 'SUCCESS', el script falla aquí y no se sube la versión.
-          STATUS=$(gh pr view ${{ github.event.pull_request.number }} --json statusCheckRollup --jq '.statusCheckRollup[] | select(.context=="Linter & Email Notification") | .state')
+      # NUEVO PASO: Descargar el artefacto que dejó el lint.yml
+      - name: Descargar estado del Linter
+        uses: actions/download-artifact@v4
+        continue-on-error: true # No queremos que rompa inmediatamente si no existe
+        with:
+          name: linter-status-${{ github.event.pull_request.head.sha }}
           
-          if [ "$STATUS" != "SUCCESS" ]; then
-            echo "❌ El linter no pasó satisfactoriamente (Estado: $STATUS). Abortando incremento de versión."
-            exit 1
+      - name: Verificar Linter
+        run: |
+          if [ -f linter_status.txt ]; then
+            STATUS=$(cat linter_status.txt)
+            if [ "$STATUS" == "SUCCESS" ]; then
+              echo "✅ Artefacto de Linter encontrado y exitoso."
+              exit 0
+            fi
           fi
-          echo "✅ Linter verificado correctamente."
+          echo "❌ No se encontró un artefacto de Linter exitoso para este commit. Abortando."
+          exit 1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
