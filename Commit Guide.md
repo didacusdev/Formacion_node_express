@@ -1,8 +1,19 @@
 # Guía de Commits Convencionales y Versionado Automático
 
-Este proyecto utiliza **[Conventional Commits](https://www.conventionalcommits.org/)** (Commits Convencionales) para mantener un historial de cambios legible y, lo más importante, para **automatizar el versionado semántico (SemVer)** de la API.
 
-Nuestros flujos de trabajo en GitHub Actions (`Upgrade Version`) leen el **Título de la Pull Request** para decidir si la versión del proyecto debe subir, y cuánto debe subir.
+Este proyecto utiliza **[Conventional Commits](https://www.conventionalcommits.org/)** para mantener un historial de cambios legible y, lo más importante, para **automatizar el versionado semántico (SemVer)** de la API.
+
+El workflow de GitHub Actions (`Upgrade Version`) decide el incremento de versión leyendo únicamente el **Título de la Pull Request** (no los mensajes de los commits individuales).
+
+Por defecto, si la PR tiene un solo commit, GitHub usará ese mensaje como título. Si hay varios commits, deberás escribir un título manualmente: **ese título es el que el bot usará para decidir el tipo de cambio**.
+
+> ---
+> ### ¡Precaución!
+> El bot **solo lee el Título de la PR, no los commits**. Si tus commits incluyen `BREAKING CHANGE` pero el título de la PR no lo indica, el bot no lo detectará y subirá solo un Patch.
+>
+> **Asegúrate** siempre de que el Título de la PR incluya el `!` o la palabra `BREAKING CHANGE` si corresponde.
+>
+>---
 
 ## Estructura del Mensaje
 
@@ -30,7 +41,9 @@ El `tipo` define la intención del cambio y le dice a nuestro robot qué número
 ### Cambios Mayores (Ruptura de compatibilidad)
 Si un cambio rompe la compatibilidad con versiones anteriores (ej. cambiar la estructura de la base de datos o eliminar un endpoint), se debe añadir un `!` después del tipo o incluir la frase `BREAKING CHANGE`.
 * **Impacto:** **MAJOR** (Mayor) `1.1.0` → `2.0.0`
-* **Ejemplos:** `feat!: cambiar motor de base de datos a PostgreSQL` o `refactor!: rediseñar arquitectura de controladores`
+* **Ejemplos:** - `feat!: cambiar motor de base de datos a PostgreSQL` o `refactor!: rediseñar arquitectura de controladores`
+    - `fix!: eliminar soporte para versiones antiguas de Node.js` o `perf!: optimizar consultas eliminando campos obsoletos`
+    - `refactor!: migrar a TypeScript` o `docs!: reescribir documentación para nueva estructura de API`
 
 ### Tareas de Mantenimiento (Sin salto de versión)
 Los siguientes tipos se usan para tareas que **NO** afectan al código de producción de la API. **El bot detectará estos tipos y detendrá la subida de versión automáticamente.**
@@ -52,7 +65,7 @@ Los siguientes tipos se usan para tareas que **NO** afectan al código de produc
 2. **Usa el imperativo en la descripción:** Como si estuvieras dando una orden. Di `añadir ruta de login` en lugar de `añadida ruta de login` o `añadiendo ruta de login`.
 3. **Sin punto final:** No pongas un punto `.` al final de la descripción corta.
 4. **El Título de la PR manda:** Aunque tengas 10 commits desordenados en tu rama, el flujo automático leerá el **Título de la Pull Request** al momento de hacer Merge a `main`. ¡Asegúrate de que el título de la PR cumpla esta convención!
-5. **Usa paréntesis para especificar el alcance:** Usa  el formato `tipo(alcance)` para indicar qué parte de la API afecta tu cambio, p. ej.:
+5. **Usa paréntesis para especificar el alcance:** Usa el formato `tipo(alcance)` para indicar qué parte de la API afecta tu cambio, p. ej.:
     - `feat(auth): ...` (login y JWT)
     - `feat(db): ...` (conexiones a base de datos)
     - `fix(router): ...` (rutas de Express)
@@ -60,6 +73,8 @@ Los siguientes tipos se usan para tareas que **NO** afectan al código de produc
     - `refactor(controllers): ...` (código de controladores)
     - `docs(readme): ...` (documentación del README)
     - `chore(deps): ...` (actualización de dependencias)
+
+---
 
 ## Ejemplos Prácticos
 

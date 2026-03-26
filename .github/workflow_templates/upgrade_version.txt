@@ -22,65 +22,50 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.ACTION_PAT }}
 
-      # --- VERIFICACIÓN DE LINTER ---
+      # --- NUEVA VERIFICACIÓN NATIVA ---
       - name: Verificar que el Linter (y checks requeridos) pasaron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Consultando el estado de los checks requeridos para la PR #${{ github.event.pull_request.number }}..."
+          
+          # gh pr checks verifica los estados. El flag --required asegura que solo mire los importantes (tu Linter).
+          # Si el linter falló, este comando lanza un "exit code 1" y detiene la action automáticamente.
           gh pr checks ${{ github.event.pull_request.number }} --required
-          echo "✅ Todos los checks requeridos están en verde."
+          
+          echo "✅ Todos los checks requeridos están en verde. Procediendo con la versión..."
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # --- NUEVO CEREBRO: CONVENTIONAL COMMITS ---
+      - name: Get PR info and files changed
+        id: pr_info
+        run: |
+          FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.merge_commit_sha }})
+          echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
+          echo "$FILES" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Determine version bump
         id: version_bump
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          echo "Analizando el título de la PR: '$PR_TITLE'"
-          bump=none
-          
-          # Lógica basada en el estándar de la industria
-          if echo "$PR_TITLE" | grep -iqE "!(.*):|BREAKING CHANGE"; then
-            echo "Cambio Mayor detectado (! o BREAKING CHANGE)"
+          bump=patch
+          if echo "$CHANGED_FILES" | grep -E 'src/routes/'; then
             bump=major
-          elif echo "$PR_TITLE" | grep -iqE "^feat(.*):"; then
-            echo "Nueva funcionalidad detectada (feat:)"
+          elif echo "$CHANGED_FILES" | grep -E 'src/controllers/|src/middlewares/|src/utils/|src/database/|src/app.js|src/server.js'; then
             bump=minor
-          elif echo "$PR_TITLE" | grep -iqE "^(fix|perf)(.*):"; then
-            echo "Corrección detectada (fix: o perf:)"
-            bump=patch
-          elif echo "$PR_TITLE" | grep -iqE "^(docs|chore|style|refactor|test|ci)(.*):"; then
-            echo "Tareas de mantenimiento detectadas. No se requiere subir versión."
-            bump=none
-          else
-            echo "El título no sigue Conventional Commits. Aplicando 'patch' por seguridad."
-            bump=patch 
           fi
-          
           echo "bump=$bump" >> $GITHUB_OUTPUT
 
-      - name: Verificar si hay que subir versión
-        run: |
-          if [ "${{ steps.version_bump.outputs.bump }}" == "none" ]; then
-            echo "✋ El incremento es 'none'. Deteniendo flujo pacíficamente. No se harán commits."
-            exit 0
-          fi
-
-      # --- APLICAR VERSIÓN (Solo si no es 'none') ---
       - name: Bump version in package.json
-        if: steps.version_bump.outputs.bump != 'none'
         run: |
           echo "PREV_VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
           npm version ${{ steps.version_bump.outputs.bump }} --no-git-tag-version
           echo "NEW_VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
 
       - name: Commit and push version bump
-        if: steps.version_bump.outputs.bump != 'none'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -88,9 +73,8 @@ jobs:
           git commit -m "ci: bump version to v${{ env.NEW_VERSION }} [skip ci]" || echo "No changes to commit"
           git push origin HEAD:${{ github.event.pull_request.base.ref }}
 
-      # --- CORREO (Solo si todo salió bien y hubo cambio) ---
       - name: Enviar correo de nueva versión
-        if: success() && steps.version_bump.outputs.bump != 'none'
+        if: success()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ vars.MAIL_SERVER }}
