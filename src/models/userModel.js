@@ -35,6 +35,11 @@ const userSchema = new mongoose.Schema(
       //   message: 'Password must contain at least one letter and one number',
       // },
     },
+    tokenJWT: {
+      type: String,
+      required: [true, 'JWT token is required'],
+      unique: true,
+    },
     address: {
       street: {
         type: String,
@@ -92,6 +97,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ['user', 'admin'],
       default: 'user',
+      validate: {
+        validator: (value) => ['user', 'admin'].includes(value),
+        message: 'Role must be either user or admin',
+      },
     },
   },
   {

@@ -63,13 +63,14 @@ const getUsers = async (req, res) => {
 const postUser = async (req, res) => {
   try {
     const { name, email, password, address, phone, role } = req.body;
-
+    const token = req.token; // El token generado por el middleware generateToken
     const hashedPassword = await argon2.hash(password, argon2Config);
 
     const newUser = new User({
       name,
       email,
       password: hashedPassword,
+      tokenJWT: token, // Almacenamos el token JWT en el campo tokenJWT del modelo User
       address: {
         street: address?.street,
         city: address?.city,
@@ -85,14 +86,20 @@ const postUser = async (req, res) => {
     if (!userSaved) res.status(500).json({ error: 'Failed to create user' });
 
 
-    res.status(201).json({ message: 'User created successfully', user: userSaved });
+    res.status(201).json({ 
+      message: 'User created successfully', 
+      user: userSaved 
+    });
   } catch (_error) {
     if (_error.name === 'ValidationError') {
       const messages = Object.values(_error.errors).map((err) => err.message);
       return res.status(400).json({ error: 'Validation failed', details: messages });
     }
     // console.error('Error creating user:', _error);
-    res.status(500).json({ error: 'An error occurred while creating the user' });
+    res.status(500).json({ 
+      message: 'An error occurred while creating the user', 
+      error: _error.message 
+    });
   }
 };
 
