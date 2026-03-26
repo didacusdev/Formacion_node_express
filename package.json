@@ -1,6 +1,6 @@
 {
   "name": "formacion_node_express",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "description": "",
   "main": "src/server.js",
   "scripts": {
