@@ -58,8 +58,9 @@ jobs:
             echo "Tareas de mantenimiento detectadas. No se requiere subir versión."
             bump=none
           else
-            echo "El título no sigue Conventional Commits. Aplicando 'patch' por seguridad."
-            bump=patch 
+            echo "⚠️ El título no sigue Conventional Commits. Aplicando 'patch' por seguridad."
+            bump=patch
+            echo "fallback=true" >> $GITHUB_OUTPUT
           fi
           
           echo "bump=$bump" >> $GITHUB_OUTPUT
@@ -88,9 +89,48 @@ jobs:
           git commit -m "ci: bump version to v${{ env.NEW_VERSION }} [skip ci]" || echo "No changes to commit"
           git push origin HEAD:${{ github.event.pull_request.base.ref }}
 
-      # --- CORREO (Solo si todo salió bien y hubo cambio) ---
+      # --- CORREO: ADVERTENCIA POR FORMATO INCORRECTO ---
+      - name: Enviar correo de advertencia (patch por fallback)
+        if: success() && steps.version_bump.outputs.fallback == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ vars.MAIL_SERVER }}
+          server_port: ${{ vars.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "⚠️ Versión incrementada como Patch por formato incorrecto: v${{ env.NEW_VERSION }}"
+          to: ${{ secrets.MAIL_TO }}
+          from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>"
+          html_body: |
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
+              <div style="background-color: #d29922; color: white; padding: 24px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">⚠️ Patch aplicado por seguridad</h1>
+              </div>
+              <div style="padding: 24px; color: #24292e; line-height: 1.6;">
+                <p style="margin-top: 0;">El título de la PR <strong>#${{ github.event.pull_request.number }}</strong> no cumple el formato de <strong>Conventional Commits</strong>. Se aplicó un incremento <code>patch</code> por seguridad.</p>
+                <div style="background: #fff8e1; padding: 16px; border-radius: 6px; border: 1px solid #ffe082; margin-bottom: 16px;">
+                  <strong>Título de la PR:</strong><br>
+                  <code style="color: #cf222e;">${{ github.event.pull_request.title }}</code><br><br>
+                  <strong>Formato esperado:</strong><br>
+                  <code style="color: #2ea44f;">tipo(alcance): descripción en imperativo</code><br><br>
+                  <strong>Ejemplo correcto:</strong><br>
+                  <code>docs(readme): actualizar documentación del proyecto</code>
+                </div>
+                <div style="background: #f6f8fa; padding: 16px; border-radius: 6px; border: 1px solid #d1d5da; margin-bottom: 16px;">
+                  <strong>Versión anterior:</strong> <code>v${{ env.PREV_VERSION }}</code><br>
+                  <strong>Nueva versión:</strong> <code style="color: #d29922; font-weight: bold;">v${{ env.NEW_VERSION }}</code><br>
+                  <strong>Tipo de incremento:</strong> <code>patch (fallback)</code><br>
+                  <strong>Autor:</strong> ${{ github.event.pull_request.user.login }}
+                </div>
+                <p style="margin-top: 24px; text-align: center;">
+                  <a href="${{ github.server_url }}/${{ github.repository }}/blob/main/Commit%20Guide.md" style="display: inline-block; background: #d29922; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">Consultar Commit Guide</a>
+                </p>
+              </div>
+            </div>
+
+      # --- CORREO NORMAL (Solo si todo salió bien, PR con titulo correcto y hubo cambio) ---
       - name: Enviar correo de nueva versión
-        if: success() && steps.version_bump.outputs.bump != 'none'
+        if: success() && steps.version_bump.outputs.bump != 'none' && steps.version_bump.outputs.fallback != 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ vars.MAIL_SERVER }}
