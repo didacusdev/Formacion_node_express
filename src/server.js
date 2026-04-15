@@ -8,7 +8,7 @@ import { connectDB } from '#database/connection.js';
   connectDB()
     .then(() => {
       app.listen(process.env.PORT, () => {
-        console.log(`Server is running on port ${process.env.PORT}\n visit: http://localhost:${process.env.PORT}`);
+        console.log(`Server is running on port ${process.env.PORT}\n visit: http://localhost:${process.env.PORT}\n API docs: http://localhost:${process.env.PORT}/api-docs`);
       });
     })
     .catch((err) => {
