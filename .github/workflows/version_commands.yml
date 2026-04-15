@@ -75,9 +75,9 @@ jobs:
         run: |
           # Obtener el estado de merge de la PR
           PR_NUMBER="${{ github.event.issue.number }}"
-          MERGED=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json merged --jq '.merged')
+          MERGED_AT=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json mergedAt --jq '.mergedAt')
           
-          if [ "$MERGED" != "true" ]; then
+          if [ -z "$MERGED_AT" ] || [ "$MERGED_AT" = "null" ]; then
             echo "❌ La PR #$PR_NUMBER fue cerrada sin merge. Los comandos de versión solo funcionan en PRs mergeadas o Issues."
             
             gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
