@@ -1,0 +1,355 @@
+# ============================================
+#  COMANDOS DE VERSIÓN VIA COMENTARIOS EN PR
+# ============================================
+#
+# Permite controlar la versión del proyecto escribiendo comandos en los
+# comentarios de una Pull Request (o Issue).
+#
+# Comandos disponibles:
+#   /upgrade-major   → Incrementa la versión MAJOR (ej: 2.1.3 → 3.0.0)
+#   /upgrade-minor   → Incrementa la versión MINOR (ej: 2.1.3 → 2.2.0)
+#   /upgrade-patch   → Incrementa la versión PATCH (ej: 2.1.3 → 2.1.4)
+#   /downgrade-major → Decrementa la versión MAJOR (ej: 2.1.3 → 1.0.0)
+#   /downgrade-minor → Decrementa la versión MINOR (ej: 2.1.3 → 2.0.0)
+#   /downgrade-patch → Decrementa la versión PATCH (ej: 2.1.3 → 2.1.2)
+#   /version-set=X.Y.Z → Establece una versión exacta (ej: /version-set=3.5.1)
+#
+# ¿Cuándo usarlo?
+# ────────────────
+# Estos comandos están diseñados para DESPUÉS del merge, para corregir versiones
+# en la rama principal. Casos de uso:
+#   - El workflow automático aplicó un 'patch' por fallback y querías 'none' → /downgrade-patch
+#   - Quieres forzar un salto de versión major manualmente → /upgrade-major
+#   - Se subió una versión incorrecta y necesitas corregirla → /downgrade-*
+#
+# Solo se pueden usar en PRs mergeadas o Issues (NO en PRs abiertas ni cerradas sin merge).
+# El cambio siempre se aplica sobre la rama principal (main).
+#
+# ¿Cómo funciona?
+# ────────────────
+# 1. El workflow escucha el evento 'issue_comment' (comentarios en PRs/Issues).
+# 2. Extrae el comando del comentario con un regex.
+# 3. Verifica que el autor del comentario sea el propietario del repositorio.
+# 4. Hace checkout de la rama principal (main).
+# 5. Para upgrades: usa `npm version major/minor/patch`.
+# 6. Para downgrades: calcula la nueva versión manualmente decrementando el campo correspondiente.
+# 7. Hace commit y push del cambio directamente a main.
+# 8. Responde al comentario con un emoji de confirmación (🚀) o error (❌).
+#
+# IMPORTANTE: No interfiere con upgrade_version.yml porque:
+#   - upgrade_version.yml se ejecuta automáticamente al hacer merge (pull_request: closed)
+#   - version_commands.yml se ejecuta manualmente al escribir un comentario (issue_comment)
+#   - Ambos operan sobre main pero en momentos distintos (uno automático, otro manual/correctivo)
+#   - Los commits generados usan [skip ci] para no disparar otros workflows
+
+name: Version Commands
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  version-command:
+    # Se ejecuta si:
+    # 1. El comentario contiene un comando válido (/upgrade-*, /downgrade-*, /version-set=*)
+    # 2. El comentario es en un Issue O en una PR ya mergeada (NO en PRs abiertas)
+    #    - github.event.issue.pull_request existe solo si es una PR
+    #    - Si es una PR, verificamos que esté cerrada (merged) con el estado 'closed'
+    #    - Si no es una PR (es un Issue normal), se permite directamente
+    if: |
+      (startsWith(github.event.comment.body, '/upgrade-') || startsWith(github.event.comment.body, '/downgrade-') || startsWith(github.event.comment.body, '/version-set=')) &&
+      (!github.event.issue.pull_request || github.event.issue.state == 'closed')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      # --- VERIFICAR QUE LA PR ESTÁ MERGEADA (no solo cerrada) ---
+      - name: Verificar que la PR fue mergeada (si es una PR)
+        if: github.event.issue.pull_request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Obtener el estado de merge de la PR
+          PR_NUMBER="${{ github.event.issue.number }}"
+          MERGED=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json merged --jq '.merged')
+          
+          if [ "$MERGED" != "true" ]; then
+            echo "❌ La PR #$PR_NUMBER fue cerrada sin merge. Los comandos de versión solo funcionan en PRs mergeadas o Issues."
+            
+            gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+              -f content="-1" --silent
+            
+            gh issue comment $PR_NUMBER \
+              --repo ${{ github.repository }} \
+              --body "❌ **Comando rechazado:** Los comandos de versión solo se pueden ejecutar en PRs **mergeadas** o en Issues. Esta PR fue cerrada sin merge."
+            
+            exit 1
+          fi
+          
+          echo "✅ PR #$PR_NUMBER está mergeada."
+
+      # --- VERIFICAR PERMISOS ---
+      # Solo el propietario del repositorio puede usar estos comandos.
+      # Esto previene que cualquier colaborador cambie la versión sin autorización.
+      - name: Verificar que el autor es el propietario del repositorio
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMMENT_AUTHOR="${{ github.event.comment.user.login }}"
+          REPO_OWNER="${{ github.repository_owner }}"
+          
+          if [ "$COMMENT_AUTHOR" != "$REPO_OWNER" ]; then
+            echo "❌ El usuario '$COMMENT_AUTHOR' no es el propietario del repositorio ('$REPO_OWNER')."
+            echo "Solo el propietario puede ejecutar comandos de versión."
+            
+            # Reaccionar al comentario con ❌
+            gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+              -f content="-1" --silent
+            
+            exit 1
+          fi
+          
+          echo "✅ Usuario autorizado: $COMMENT_AUTHOR"
+
+      # --- EXTRAER COMANDO ---
+      - name: Extraer comando del comentario
+        id: parse_command
+        env:
+          # Usamos variable de entorno en lugar de interpolación directa ${{ }} para prevenir
+          # inyección de código. Si alguien escribe un comentario malicioso como:
+          #   /upgrade-major"; rm -rf / #
+          # Con interpolación directa se ejecutaría como bash. Con env, es solo un string.
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          echo "Comentario recibido: '$COMMENT_BODY'"
+          
+          # Intentar extraer /version-set=X.Y.Z primero
+          SET_VERSION=$(echo "$COMMENT_BODY" | head -n 1 | grep -oE '/version-set=[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+          
+          if [ -n "$SET_VERSION" ]; then
+            # Extraer solo la versión (después del =)
+            TARGET_VERSION=$(echo "$SET_VERSION" | cut -d'=' -f2)
+            echo "action=set" >> $GITHUB_OUTPUT
+            echo "level=manual" >> $GITHUB_OUTPUT
+            echo "target_version=$TARGET_VERSION" >> $GITHUB_OUTPUT
+            echo "📦 Acción: set | Versión objetivo: $TARGET_VERSION"
+          else
+            # Extraer /upgrade-* o /downgrade-*
+            COMMAND=$(echo "$COMMENT_BODY" | head -n 1 | grep -oE '/(upgrade|downgrade)-(major|minor|patch)' | head -n 1)
+            
+            if [ -z "$COMMAND" ]; then
+              echo "❌ Comando no reconocido"
+              exit 1
+            fi
+            
+            # Separar acción (upgrade/downgrade) y nivel (major/minor/patch)
+            ACTION=$(echo "$COMMAND" | cut -d'-' -f1 | tr -d '/')
+            LEVEL=$(echo "$COMMAND" | cut -d'-' -f2)
+            
+            echo "action=$ACTION" >> $GITHUB_OUTPUT
+            echo "level=$LEVEL" >> $GITHUB_OUTPUT
+            echo "📦 Acción: $ACTION | Nivel: $LEVEL"
+          fi
+
+      # --- CHECKOUT ---
+      # Siempre operamos sobre la rama principal (main) para que el cambio
+      # de versión se aplique donde realmente importa (producción).
+      - name: Checkout repository (rama principal)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.ACTION_PAT }}
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # --- OBTENER VERSIÓN ACTUAL ---
+      - name: Obtener versión actual
+        run: |
+          CURRENT=$(jq -r .version package.json)
+          echo "PREV_VERSION=$CURRENT" >> $GITHUB_ENV
+          echo "📌 Versión actual: $CURRENT"
+
+      # --- UPGRADE ---
+      - name: Upgrade version
+        if: steps.parse_command.outputs.action == 'upgrade'
+        run: |
+          npm version ${{ steps.parse_command.outputs.level }} --no-git-tag-version
+          NEW=$(jq -r .version package.json)
+          echo "NEW_VERSION=$NEW" >> $GITHUB_ENV
+          echo "⬆️ Upgrade: ${{ env.PREV_VERSION }} → $NEW"
+
+      # --- SET (versión manual) ---
+      # Establece una versión exacta especificada por el usuario.
+      # Valida que el formato sea X.Y.Z con números válidos.
+      - name: Set version manually
+        if: steps.parse_command.outputs.action == 'set'
+        run: |
+          TARGET="${{ steps.parse_command.outputs.target_version }}"
+          
+          # Validar formato semver básico (X.Y.Z donde todos son números)
+          if ! echo "$TARGET" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Formato inválido: '$TARGET'. Debe ser X.Y.Z (ej: 3.5.1)"
+            exit 1
+          fi
+          
+          # Actualizar package.json con la versión exacta
+          jq --arg v "$TARGET" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+          
+          echo "NEW_VERSION=$TARGET" >> $GITHUB_ENV
+          echo "🎯 Set: ${{ env.PREV_VERSION }} → $TARGET"
+
+      # --- DOWNGRADE ---
+      # npm no tiene un comando nativo para decrementar versiones,
+      # así que calculamos la nueva versión manualmente.
+      - name: Downgrade version
+        if: steps.parse_command.outputs.action == 'downgrade'
+        run: |
+          CURRENT="${{ env.PREV_VERSION }}"
+          LEVEL="${{ steps.parse_command.outputs.level }}"
+          
+          # Separar los componentes de la versión (major.minor.patch)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          
+          case "$LEVEL" in
+            major)
+              if [ "$MAJOR" -le 0 ]; then
+                echo "❌ No se puede decrementar MAJOR por debajo de 0"
+                exit 1
+              fi
+              MAJOR=$((MAJOR - 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              if [ "$MINOR" -le 0 ]; then
+                echo "❌ No se puede decrementar MINOR por debajo de 0"
+                exit 1
+              fi
+              MINOR=$((MINOR - 1))
+              PATCH=0
+              ;;
+            patch)
+              if [ "$PATCH" -le 0 ]; then
+                echo "❌ No se puede decrementar PATCH por debajo de 0"
+                exit 1
+              fi
+              PATCH=$((PATCH - 1))
+              ;;
+          esac
+          
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          
+          # Actualizar package.json con la nueva versión
+          jq --arg v "$NEW_VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+          
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "⬇️ Downgrade: $CURRENT → $NEW_VERSION"
+
+      # --- COMMIT Y PUSH ---
+      - name: Commit and push version change to main
+        run: |
+          ACTION="${{ steps.parse_command.outputs.action }}"
+          LEVEL="${{ steps.parse_command.outputs.level }}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json || true
+          if [ "$ACTION" == "set" ]; then
+            git commit -m "ci: set version to v${{ env.NEW_VERSION }} [skip ci]" || echo "No changes to commit"
+          else
+            git commit -m "ci: $ACTION version ($LEVEL) to v${{ env.NEW_VERSION }} [skip ci]" || echo "No changes to commit"
+          fi
+          git push origin main
+
+      # --- REACCIONAR AL COMENTARIO ---
+      - name: Reaccionar con éxito
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Añadir reacción 🚀 al comentario
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content="rocket" --silent
+          
+          # Responder al comentario con los detalles
+          gh issue comment ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --body "✅ **Versión actualizada**
+          
+          | | |
+          |---|---|
+          | **Comando** | \`/${{ steps.parse_command.outputs.action }}-${{ steps.parse_command.outputs.level }}\` |
+          | **Anterior** | \`v${{ env.PREV_VERSION }}\` |
+          | **Nueva** | \`v${{ env.NEW_VERSION }}\` |
+          | **Ejecutado por** | @${{ github.event.comment.user.login }} |"
+
+      # --- CORREO DE NOTIFICACIÓN ---
+      - name: Enviar correo de cambio de versión manual
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ vars.MAIL_SERVER }}
+          server_port: ${{ vars.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Versión modificada manualmente 🔧: v${{ env.NEW_VERSION }}"
+          to: ${{ secrets.MAIL_TO }}
+          from: "GitHub Robot <${{ secrets.MAIL_USERNAME }}>"
+          html_body: |
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 600px; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; margin: auto;">
+              <div style="background-color: #0366d6; color: white; padding: 24px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">Versión modificada manualmente 🔧</h1>
+              </div>
+              <div style="padding: 24px; color: #24292e; line-height: 1.6;">
+                <p style="margin-top: 0;">Se ha modificado la versión del proyecto mediante un comando slash en el <strong>#${{ github.event.issue.number }}</strong>.</p>
+                <div style="background: #f6f8fa; padding: 16px; border-radius: 6px; border: 1px solid #d1d5da; margin-bottom: 16px;">
+                  <strong>Versión anterior:</strong> <code>v${{ env.PREV_VERSION }}</code><br>
+                  <strong>Nueva versión:</strong> <code style="color: #0366d6; font-weight: bold;">v${{ env.NEW_VERSION }}</code><br>
+                  <strong>Comando:</strong> <code>/${{ steps.parse_command.outputs.action }}-${{ steps.parse_command.outputs.level }}</code><br>
+                  <strong>Ejecutado por:</strong> ${{ github.event.comment.user.login }}
+                </div>
+                <p style="margin-top: 24px; text-align: center;">
+                  <a href="${{ github.event.comment.html_url }}" style="display: inline-block; background: #0366d6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">Ver comentario</a>
+                </p>
+              </div>
+            </div>
+
+      - name: Reaccionar con error
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Solo reaccionar si no se reaccionó ya en pasos anteriores (verificación de merge/permisos)
+          # Intentar añadir reacción (puede fallar si ya se añadió, por eso usamos || true)
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content="-1" --silent || true
+          
+          # Construir mensaje de error con los datos disponibles
+          ACTION="${{ steps.parse_command.outputs.action }}"
+          LEVEL="${{ steps.parse_command.outputs.level }}"
+          PREV="${{ env.PREV_VERSION }}"
+          
+          if [ -n "$ACTION" ] && [ -n "$PREV" ]; then
+            gh issue comment ${{ github.event.issue.number }} \
+              --repo ${{ github.repository }} \
+              --body "❌ **Error al ejecutar el comando de versión**
+          
+          Revisa los logs del workflow para más detalles.
+          
+          > Comando: \`/$ACTION-$LEVEL\`
+          > Versión actual: \`v$PREV\`" || true
+          else
+            gh issue comment ${{ github.event.issue.number }} \
+              --repo ${{ github.repository }} \
+              --body "❌ **Error al ejecutar el comando de versión**
+          
+          Revisa los logs del workflow para más detalles." || true
+          fi
