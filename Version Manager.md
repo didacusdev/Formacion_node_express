@@ -191,7 +191,7 @@ flowchart TD
 
     B -- "Sí" --> P{"¿Es una PR?"}
 
-    P -- "Sí" --> Q{"¿La PR está mergeada?\n(gh pr view --json merged)"}
+    P -- "Sí" --> Q{"¿La PR está mergeada?\n(gh pr view --json mergedAt)"}
     Q -- "No — abierta o cerrada sin merge" --> R["❌ Rechazar + 👎\nSolo PRs mergeadas o Issues"]
     Q -- "Sí" --> D
 
