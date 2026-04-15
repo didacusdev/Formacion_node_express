@@ -1,6 +1,7 @@
 # Formacion Node.js, Express y MongoDB
 
-> API RESTful desarrollada con Node.js, Express y MongoDB, con documentación interactiva Swagger, logging HTTP, cabeceras de seguridad y control de acceso CORS.
+> API RESTful desarrollada durante las clases dictadas a estudiantes de DAW.
+> Utiizando Node.js, Express y MongoDB, con documentación interactiva Swagger, logging HTTP, cabeceras de seguridad y control de acceso CORS.
 
 ---
 
