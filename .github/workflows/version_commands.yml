@@ -279,6 +279,14 @@ jobs:
           gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
             -f content="rocket" --silent
           
+          # Construir el nombre del comando para mostrar
+          ACTION="${{ steps.parse_command.outputs.action }}"
+          if [ "$ACTION" == "set" ]; then
+            CMD_DISPLAY="/set-version=${{ env.NEW_VERSION }}"
+          else
+            CMD_DISPLAY="/$ACTION-${{ steps.parse_command.outputs.level }}"
+          fi
+          
           # Responder al comentario con los detalles
           gh issue comment ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
@@ -286,7 +294,7 @@ jobs:
           
           | | |
           |---|---|
-          | **Comando** | \`/${{ steps.parse_command.outputs.action }}-${{ steps.parse_command.outputs.level }}\` |
+          | **Comando** | \`$CMD_DISPLAY\` |
           | **Anterior** | \`v${{ env.PREV_VERSION }}\` |
           | **Nueva** | \`v${{ env.NEW_VERSION }}\` |
           | **Ejecutado por** | @${{ github.event.comment.user.login }} |"
@@ -313,7 +321,7 @@ jobs:
                 <div style="background: #f6f8fa; padding: 16px; border-radius: 6px; border: 1px solid #d1d5da; margin-bottom: 16px;">
                   <strong>Versión anterior:</strong> <code>v${{ env.PREV_VERSION }}</code><br>
                   <strong>Nueva versión:</strong> <code style="color: #0366d6; font-weight: bold;">v${{ env.NEW_VERSION }}</code><br>
-                  <strong>Comando:</strong> <code>/${{ steps.parse_command.outputs.action }}-${{ steps.parse_command.outputs.level }}</code><br>
+                  <strong>Comando:</strong> <code>${{ steps.parse_command.outputs.action == 'set' && format('/set-version={0}', env.NEW_VERSION) || format('/{0}-{1}', steps.parse_command.outputs.action, steps.parse_command.outputs.level) }}</code><br>
                   <strong>Ejecutado por:</strong> ${{ github.event.comment.user.login }}
                 </div>
                 <p style="margin-top: 24px; text-align: center;">
