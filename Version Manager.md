@@ -24,7 +24,7 @@ Este proyecto incluye un sistema de gestión de versiones manual mediante **coma
 | `/downgrade-major` | Decrementa la versión MAJOR | `2.1.3` → `1.0.0` |
 | `/downgrade-minor` | Decrementa la versión MINOR | `2.1.3` → `2.0.0` |
 | `/downgrade-patch` | Decrementa la versión PATCH | `2.1.3` → `2.1.2` |
-| `/version-set=X.Y.Z` | Establece una versión exacta | `/version-set=3.5.1` |
+| `/set-version=X.Y.Z` | Establece una versión exacta | `/set-version=3.5.1` |
 
 > [!NOTE]
 > Los comandos de downgrade no pueden reducir ningún componente por debajo de `0`. Si se intenta, el workflow fallará con un mensaje de error.
@@ -63,7 +63,7 @@ El cambio **siempre se aplica sobre la rama `main`**, independientemente de dón
 
 Ejemplo:
 ```
-/version-set=2.0.0
+/set-version=2.0.0
 ```
 
 ---
@@ -75,10 +75,10 @@ Ejemplo:
 | Situación | Comando recomendado |
 |---|---|
 | El workflow automático aplicó `patch` por fallback (título de PR incorrecto) y no debía subir versión | `/downgrade-patch` |
-| Se mergeó una PR como `feat:` pero en realidad era un `fix:` (minor en vez de patch) | `/downgrade-minor` seguido de `/upgrade-patch` o directamente `/version-set=X.Y.Z` |
+| Se mergeó una PR como `feat:` pero en realidad era un `fix:` (minor en vez de patch) | `/downgrade-minor` seguido de `/upgrade-patch` o directamente `/set-version=X.Y.Z` |
 | Se necesita forzar un salto de versión major por decisión del equipo | `/upgrade-major` |
-| Se quiere alinear la versión del proyecto con una versión externa o release planificado | `/version-set=X.Y.Z` |
-| Se detectó que la versión actual es incorrecta tras varios merges | `/version-set=X.Y.Z` (establecer la versión correcta directamente) |
+| Se quiere alinear la versión del proyecto con una versión externa o release planificado | `/set-version=X.Y.Z` |
+| Se detectó que la versión actual es incorrecta tras varios merges | `/set-version=X.Y.Z` (establecer la versión correcta directamente) |
 
 ### Cuándo NO usarlos
 
@@ -120,14 +120,14 @@ Ejemplo:
 **Corrección:** Ir a la PR `#58` (ya mergeada) y escribir un comentario:
 
 ```
-/version-set=3.0.0
+/set-version=3.0.0
 ```
 
 **Resultado:** El bot reacciona con 🚀 y responde:
 
 | | |
 |---|---|
-| **Comando** | `/set-manual` |
+| **Comando** | `/set-version=3.0.0` |
 | **Anterior** | `v2.1.0` |
 | **Nueva** | `v3.0.0` |
 | **Ejecutado por** | @propietario |
@@ -141,14 +141,14 @@ Ejemplo:
 **Corrección:** Crear un Issue (o usar uno existente) y escribir un comentario:
 
 ```
-/version-set=3.3.0
+/set-version=3.3.0
 ```
 
 **Resultado:** El bot reacciona con 🚀 y responde:
 
 | | |
 |---|---|
-| **Comando** | `/set-manual` |
+| **Comando** | `/set-version=3.3.0` |
 | **Anterior** | `v3.2.7` |
 | **Nueva** | `v3.3.0` |
 | **Ejecutado por** | @propietario |
@@ -181,11 +181,11 @@ Ejemplo:
 
 ### Workflow `version_commands.yml` — Comandos manuales
 
-Este workflow se dispara cuando se escribe un comentario en una PR o Issue. Soporta tres tipos de acciones: `/upgrade-*`, `/downgrade-*` y `/version-set=X.Y.Z`.
+Este workflow se dispara cuando se escribe un comentario en una PR o Issue. Soporta tres tipos de acciones: `/upgrade-*`, `/downgrade-*` y `/set-version=X.Y.Z`.
 
 ```mermaid
 flowchart TD
-    A(["Comentario en PR o Issue"]) --> B{"¿Empieza con /upgrade-,\n/downgrade- o /version-set=?"}
+    A(["Comentario en PR o Issue"]) --> B{"¿Empieza con /upgrade-,\n/downgrade- o /set-version=?"}
 
     B -- "No" --> C["Ignorar — no es un comando"]
 
@@ -203,7 +203,7 @@ flowchart TD
 
     F --> F1{"¿Tipo de comando?"}
 
-    F1 -- "/version-set=X.Y.Z" --> F2["action=set\ntarget_version=X.Y.Z"]
+    F1 -- "/set-version=X.Y.Z" --> F2["action=set\ntarget_version=X.Y.Z"]
     F1 -- "/upgrade-* o /downgrade-*" --> F3["action=upgrade|downgrade\nlevel=major|minor|patch"]
 
     F2 --> G["Checkout main + Setup Node.js"]
@@ -262,11 +262,11 @@ flowchart TD
     O -- "No" --> Q["Email de nueva versión"]
 ```
 
-### Flujo de `/version-set=X.Y.Z` (detalle)
+### Flujo de `/set-version=X.Y.Z` (detalle)
 
 ```mermaid
 flowchart TD
-    A["Comentario: /version-set=X.Y.Z"] --> B["Extraer versión objetivo\n(regex: /version-set=[0-9]+.[0-9]+.[0-9]+)"]
+    A["Comentario: /set-version=X.Y.Z"] --> B["Extraer versión objetivo\n(regex: /set-version=[0-9]+.[0-9]+.[0-9]+)"]
 
     B --> C{"¿Formato válido?\n(X.Y.Z con números)"}
 

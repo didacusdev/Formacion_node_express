@@ -12,7 +12,7 @@
 #   /downgrade-major → Decrementa la versión MAJOR (ej: 2.1.3 → 1.0.0)
 #   /downgrade-minor → Decrementa la versión MINOR (ej: 2.1.3 → 2.0.0)
 #   /downgrade-patch → Decrementa la versión PATCH (ej: 2.1.3 → 2.1.2)
-#   /version-set=X.Y.Z → Establece una versión exacta (ej: /version-set=3.5.1)
+#   /set-version=X.Y.Z → Establece una versión exacta (ej: /set-version=3.5.1)
 #
 # ¿Cuándo usarlo?
 # ────────────────
@@ -57,7 +57,7 @@ jobs:
     #    - Si es una PR, verificamos que esté cerrada (merged) con el estado 'closed'
     #    - Si no es una PR (es un Issue normal), se permite directamente
     if: |
-      (startsWith(github.event.comment.body, '/upgrade-') || startsWith(github.event.comment.body, '/downgrade-') || startsWith(github.event.comment.body, '/version-set=')) &&
+      (startsWith(github.event.comment.body, '/upgrade-') || startsWith(github.event.comment.body, '/downgrade-') || startsWith(github.event.comment.body, '/set-version=')) &&
       (!github.event.issue.pull_request || github.event.issue.state == 'closed')
     runs-on: ubuntu-latest
 
@@ -127,8 +127,8 @@ jobs:
         run: |
           echo "Comentario recibido: '$COMMENT_BODY'"
           
-          # Intentar extraer /version-set=X.Y.Z primero
-          SET_VERSION=$(echo "$COMMENT_BODY" | head -n 1 | grep -oE '/version-set=[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+          # Intentar extraer /set-version=X.Y.Z primero
+          SET_VERSION=$(echo "$COMMENT_BODY" | head -n 1 | grep -oE '/set-version=[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
           
           if [ -n "$SET_VERSION" ]; then
             # Extraer solo la versión (después del =)
