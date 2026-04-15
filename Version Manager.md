@@ -179,42 +179,6 @@ Ejemplo:
 
 ## Cómo funciona internamente
 
-### Workflow `upgrade_version.yml` — Versionado automático
-
-Este workflow se ejecuta automáticamente cada vez que una PR se mergea en `main`. Analiza el título de la PR siguiendo el estándar [Conventional Commits](./Commit%20Guide.md) y determina el tipo de incremento.
-
-```mermaid
-flowchart TD
-    A(["PR cerrada"]) --> B{"¿La PR fue mergeada\ny no contiene [skip ci]?"}
-
-    B -- "No" --> C["Ignorar — no se hace nada"]
-
-    B -- "Sí" --> D["Verificar checks requeridos\n(Linter, etc.)"]
-
-    D --> E["Analizar título de la PR"]
-
-    E --> F{"¿Qué tipo de commit?"}
-
-    F -- "feat!(scope): o BREAKING CHANGE" --> G["bump = major"]
-    F -- "feat(scope):" --> H["bump = minor"]
-    F -- "fix(scope): o perf(scope):" --> I["bump = patch"]
-    F -- "docs, chore, style,\nrefactor, test, ci" --> J["bump = none\n(no se sube versión)"]
-    F -- "Título no reconocido" --> K["⚠️ bump = patch\n(fallback por seguridad)"]
-
-    J --> L(["Fin — sin cambios"])
-
-    G --> M["npm version --no-git-tag-version"]
-    H --> M
-    I --> M
-    K --> M
-
-    M --> N["Commit + push a main\nci: bump version to vX.Y.Z [skip ci]"]
-
-    N --> O{"¿Fue fallback?"}
-    O -- "Sí" --> P["📧 Email de advertencia\n(formato incorrecto)"]
-    O -- "No" --> Q["📧 Email de nueva versión 🚀"]
-```
-
 ### Workflow `version_commands.yml` — Comandos manuales
 
 Este workflow se dispara cuando se escribe un comentario en una PR o Issue. Soporta tres tipos de acciones: `/upgrade-*`, `/downgrade-*` y `/version-set=X.Y.Z`.
@@ -257,9 +221,45 @@ flowchart TD
     K --> M
     L --> M
 
-    M --> N["🚀 Reaccionar + comentar tabla + 📧 email"]
+    M --> N["Reaccionar + comentar tabla + email"]
 
     M -- "Si falla algún paso" --> X["👎 Reaccionar + comentar error"]
+```
+
+### Workflow `upgrade_version.yml` — Versionado automático
+
+Este workflow se ejecuta automáticamente cada vez que una PR se mergea en `main`. Analiza el título de la PR siguiendo el estándar [Conventional Commits](./Commit%20Guide.md) y determina el tipo de incremento.
+
+```mermaid
+flowchart TD
+    A(["PR cerrada"]) --> B{"¿La PR fue mergeada\ny no contiene [skip ci]?"}
+
+    B -- "No" --> C["Ignorar — no se hace nada"]
+
+    B -- "Sí" --> D["Verificar checks requeridos\n(Linter, etc.)"]
+
+    D --> E["Analizar título de la PR"]
+
+    E --> F{"¿Qué tipo de commit?"}
+
+    F -- "feat!(scope): o BREAKING CHANGE" --> G["bump = major"]
+    F -- "feat(scope):" --> H["bump = minor"]
+    F -- "fix(scope): o perf(scope):" --> I["bump = patch"]
+    F -- "docs, chore, style,\nrefactor, test, ci" --> J["bump = none\n(no se sube versión)"]
+    F -- "Título no reconocido" --> K["⚠️ bump = patch\n(fallback por seguridad)"]
+
+    J --> L(["Fin — sin cambios"])
+
+    G --> M["npm version --no-git-tag-version"]
+    H --> M
+    I --> M
+    K --> M
+
+    M --> N["Commit + push a main\nci: bump version to vX.Y.Z [skip ci]"]
+
+    N --> O{"¿Fue fallback?"}
+    O -- "Sí" --> P["Email de advertencia\n(formato incorrecto)"]
+    O -- "No" --> Q["Email de nueva versión"]
 ```
 
 ### Flujo de `/version-set=X.Y.Z` (detalle)
@@ -280,7 +280,7 @@ flowchart TD
 
     G --> H["Push a main"]
 
-    H --> I["🚀 Reaccionar + comentar\n+ 📧 email de notificación"]
+    H --> I["Reaccionar + comentar\n+ email de notificación"]
 ```
 
 ### Flujo de downgrade (detalle)
@@ -308,16 +308,6 @@ flowchart TD
 
 ### Relación entre ambos workflows
 
-| | 🔄 **Versionado automático** | 🔧 **Versionado manual (correctivo)** |
-|---|---|---|
-| **Workflow** | `upgrade_version.yml` | `version_commands.yml` |
-| **Se dispara con** | Merge de una PR (`pull_request: closed`) | Comentario `/comando` (`issue_comment: created`) |
-| **Entrada** | Título de la PR (Conventional Commits) | Comando slash del comentario |
-| **Acciones** | Incrementa versión: `major` / `minor` / `patch` / `none` | Corrige versión: `upgrade` / `downgrade` / `set` |
-| **Destino** | `main` → `package.json` | `main` → `package.json` |
-| **Momento** | Automático, inmediato tras el merge | Manual, cuando se detecta un error post-merge |
-| **Relación** | Se ejecuta **primero** | Corrige **después** si fue necesario |
-
 ```mermaid
 graph TD
     MERGE["🔀 PR mergeada"] --> AUTO["🔄 upgrade_version.yml\n(automático)"]
@@ -328,6 +318,17 @@ graph TD
     COMANDO --> MANUAL["🔧 version_commands.yml\n(correctivo)"]
     MANUAL --> MAIN
 ```
+
+
+| | 🔄 **Versionado automático** | 🔧 **Versionado manual (correctivo)** |
+|---|---|---|
+| **Workflow** | `upgrade_version.yml` | `version_commands.yml` |
+| **Se dispara con** | Merge de una PR (`pull_request: closed`) | Comentario `/comando` (`issue_comment: created`) |
+| **Entrada** | Título de la PR (Conventional Commits) | Comando slash del comentario |
+| **Acciones** | Incrementa versión: `major` / `minor` / `patch` / `none` | Corrige versión: `upgrade` / `downgrade` / `set` |
+| **Destino** | `main` → `package.json` | `main` → `package.json` |
+| **Momento** | Automático, inmediato tras el merge | Manual, cuando se detecta un error post-merge |
+| **Relación** | Se ejecuta **primero** | Corrige **después** si fue necesario |
 
 > [!NOTE]
 > Ambos workflows operan sobre `main` pero **no se ejecutan simultáneamente**:
